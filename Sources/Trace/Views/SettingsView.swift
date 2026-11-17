@@ -85,6 +85,7 @@ struct SettingsView: View {
                 Text(L("System")).tag(AppLanguage.system)
                 Text("简体中文").tag(AppLanguage.zhHans)
                 Text("English").tag(AppLanguage.en)
+                Text("Русский").tag(AppLanguage.ru)
             }
             .labelsHidden()
             .fixedSize()
@@ -109,6 +110,10 @@ struct SettingsView: View {
     @ViewBuilder private var recording: some View {
         row(L("Window titles"), L("The title of the window in front, e.g. a document or chat name")) {
             Toggle(L("Window titles"), isOn: $model.captureTitles).toggleStyle(.switch).labelsHidden()
+        }
+        row(L("Telegram chat names"), L("Group time by the open chat in Telegram for Mac")) {
+            Toggle(L("Telegram chat names"), isOn: $model.captureTelegramChats)
+                .toggleStyle(.switch).labelsHidden().disabled(!model.captureTitles)
         }
         row(L("File paths"), L("The file open in document-based apps")) {
             Toggle(L("File paths"), isOn: $model.captureFiles).toggleStyle(.switch).labelsHidden()

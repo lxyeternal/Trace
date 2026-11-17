@@ -26,6 +26,7 @@ struct OnboardingView: View {
                             Text(L("System")).tag(AppLanguage.system)
                             Text("简体中文").tag(AppLanguage.zhHans)
                             Text("English").tag(AppLanguage.en)
+                            Text("Русский").tag(AppLanguage.ru)
                         }
                         Picker(L("Appearance"), selection: $model.appearance) {
                             Text(L("Light")).tag(Appearance.light)

@@ -23,6 +23,20 @@ final class TraceCoreTests: XCTestCase {
         XCTAssertEqual(events[1].title, "B.swift")
     }
 
+    func testTelegramChatTotalsAcrossRevisits() throws {
+        let store = try EventStore()
+        for (offset, name) in [(0, "One"), (2, "One"), (4, "Two"), (6, "Two"), (8, "One"), (10, "One")] {
+            let sample = Sample(bundleID: "ru.keepcoder.Telegram", appName: "Telegram", title: name)
+            try store.heartbeat(sample, at: t0 + Double(offset))
+        }
+        let range = DateInterval(start: t0, duration: 12)
+        let events = try store.events(from: range.start, to: range.end)
+        let tree = Analyzer.tree(events, in: range, tagger: try store.tagger(), mode: .byApp)
+        let chats = try XCTUnwrap(tree.first?.children)
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: chats.map { ($0.label, $0.seconds) }),
+                       ["One": 4, "Two": 2])
+    }
+
     func testHeartbeatStartsNewEventAfterLongGap() throws {
         let store = try EventStore()
         try store.heartbeat(xcode("A.swift"), at: t0)

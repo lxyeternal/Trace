@@ -2,7 +2,7 @@ import Foundation
 import TraceCore
 
 enum AppLanguage: String, CaseIterable, Identifiable {
-    case system, en, zhHans = "zh-Hans"
+    case system, en, ru, zhHans = "zh-Hans"
     var id: String { rawValue }
 }
 
@@ -14,14 +14,18 @@ enum L10n {
     private(set) static var code = "en"
 
     static var isChinese: Bool { code.hasPrefix("zh") }
-    static var locale: Locale { Locale(identifier: isChinese ? "zh_CN" : "en_US") }
+    static var locale: Locale { Locale(identifier: code == "ru" ? "ru_RU" : (isChinese ? "zh_CN" : "en_US")) }
 
     static func apply(_ language: AppLanguage) {
         switch language {
         case .system:
             let preferred = Locale.preferredLanguages.first ?? "en"
-            code = preferred.hasPrefix("zh") ? "zh-Hans" : "en"
-        case .en, .zhHans:
+            switch Locale(identifier: preferred).language.languageCode?.identifier {
+            case "ru": code = "ru"
+            case "zh": code = "zh-Hans"
+            default: code = "en"
+            }
+        case .en, .ru, .zhHans:
             code = language.rawValue
         }
         table = Bundle.main.path(forResource: code, ofType: "lproj").flatMap(Bundle.init(path:))
@@ -36,10 +40,15 @@ enum Fmt {
     static func duration(_ seconds: TimeInterval) -> String {
         if seconds < 60 {
             let s = Int(seconds.rounded())
+            if L10n.code == "ru" { return "\(s) с" }
             return L10n.isChinese ? "\(s)秒" : "\(s)s"
         }
         let minutes = Int((seconds / 60).rounded())
         let h = minutes / 60, m = minutes % 60
+        if L10n.code == "ru" {
+            if h == 0 { return "\(m) мин" }
+            return m == 0 ? "\(h) ч" : "\(h) ч \(m) мин"
+        }
         if L10n.isChinese {
             if h == 0 { return "\(m)分" }
             return m == 0 ? "\(h)小时" : "\(h)小时\(m)分"
@@ -58,12 +67,23 @@ enum Fmt {
     /// Whole hours, for where there is little room: "180h".
     static func hours(_ seconds: TimeInterval) -> String {
         let h = Int((seconds / 3600).rounded())
+        if L10n.code == "ru" { return "\(h) ч" }
         return L10n.isChinese ? "\(h)小时" : "\(h)h"
     }
 
     /// "1 record", "5 records".
     static func records(_ count: Int) -> String {
-        count == 1 ? L("1 record") : String(format: L("%d records"), count)
+        if L10n.code == "ru" {
+            let label: String
+            switch (count % 100, count % 10) {
+            case (11...14, _): label = "записей"
+            case (_, 1): label = "запись"
+            case (_, 2...4): label = "записи"
+            default: label = "записей"
+            }
+            return "\(count) \(label)"
+        }
+        return count == 1 ? L("1 record") : String(format: L("%d records"), count)
     }
 
     static func time(_ date: Date) -> String {

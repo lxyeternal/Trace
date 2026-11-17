@@ -101,6 +101,12 @@ final class AppModel: ObservableObject {
     @Published var captureTitles: Bool {
         didSet { UserDefaults.standard.set(captureTitles, forKey: "captureTitles"); watcher.captureTitles = captureTitles }
     }
+    @Published var captureTelegramChats: Bool {
+        didSet {
+            UserDefaults.standard.set(captureTelegramChats, forKey: "captureTelegramChats")
+            watcher.captureTelegramChats = captureTelegramChats
+        }
+    }
     @Published var captureFiles: Bool {
         didSet { UserDefaults.standard.set(captureFiles, forKey: "captureFiles"); watcher.captureFiles = captureFiles }
     }
@@ -151,13 +157,14 @@ final class AppModel: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
-        defaults.register(defaults: ["captureTitles": true, "captureFiles": true, "captureURLs": true,
+        defaults.register(defaults: ["captureTelegramChats": true, "captureTitles": true, "captureFiles": true, "captureURLs": true,
                                      "captureBackground": true, "captureOpenApps": true])
         appearance = Appearance(rawValue: defaults.string(forKey: "appearance") ?? "") ?? .system
         language = AppLanguage(rawValue: defaults.string(forKey: "language") ?? "") ?? .system
         let minutes = defaults.integer(forKey: "idleMinutes")
         idleMinutes = minutes > 0 ? minutes : 3
         captureTitles = defaults.bool(forKey: "captureTitles")
+        captureTelegramChats = defaults.bool(forKey: "captureTelegramChats")
         captureFiles = defaults.bool(forKey: "captureFiles")
         captureURLs = defaults.bool(forKey: "captureURLs")
         captureBackground = defaults.bool(forKey: "captureBackground")
@@ -209,6 +216,7 @@ final class AppModel: ObservableObject {
         watcher = ActivityWatcher(store: store)
         watcher.idleThreshold = TimeInterval(idleMinutes * 60)
         watcher.captureTitles = captureTitles
+        watcher.captureTelegramChats = captureTelegramChats
         watcher.captureFiles = captureFiles
         watcher.captureURLs = captureURLs
         watcher.captureBackground = captureBackground

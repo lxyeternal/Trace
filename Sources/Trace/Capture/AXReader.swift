@@ -31,7 +31,7 @@ enum AXReader {
     /// Reads the focused window. `previous` is the last result for the same
     /// app: while the title is unchanged its URL is reused, so the costly
     /// search through a browser's page runs only when the page changes.
-    static func focusedWindow(pid: pid_t, isBrowser: Bool, previous: WindowInfo? = nil) -> WindowInfo {
+    static func focusedWindow(pid: pid_t, isBrowser: Bool, telegramChat: Bool = false, previous: WindowInfo? = nil) -> WindowInfo {
         var info = WindowInfo()
         // Set on the system-wide element so the limit covers every element of
         // every app; set on an app element it would not reach its windows.
@@ -39,7 +39,7 @@ enum AXReader {
         let app = AXUIElementCreateApplication(pid)
 
         guard let window = element(app, kAXFocusedWindowAttribute) else { return info }
-        info.title = string(window, kAXTitleAttribute) ?? ""
+        info.title = (telegramChat ? telegramChatTitle(in: window) : nil) ?? string(window, kAXTitleAttribute) ?? ""
 
         // Document-based apps expose the open file; Safari exposes the page URL here.
         if let document = string(window, kAXDocumentAttribute), let parsed = URL(string: document) {
@@ -91,6 +91,29 @@ enum AXReader {
             }
         }
         return nil
+    }
+
+    // The native Telegram client exposes its chat header as an immediate
+    // button with the chat name as its description and status as its value.
+    static func telegramChatTitle(in window: AXUIElement) -> String? {
+        guard let origin = position(of: window),
+              let children = copy(window, kAXChildrenAttribute) as? [AXUIElement] else { return nil }
+        let names = children.compactMap { child -> String? in
+            guard string(child, kAXRoleAttribute) == kAXButtonRole,
+                  let point = position(of: child), (0...80).contains(point.y - origin.y),
+                  let status = string(child, kAXValueAttribute), !status.isEmpty,
+                  let name = string(child, kAXDescriptionAttribute), !name.isEmpty,
+                  !name.contains(where: { $0.isNewline }) else { return nil }
+            return name
+        }
+        return names.count == 1 ? names[0] : nil
+    }
+
+    private static func position(of element: AXUIElement) -> CGPoint? {
+        guard let raw = copy(element, kAXPositionAttribute),
+              CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+        var point = CGPoint.zero
+        return AXValueGetValue(raw as! AXValue, .cgPoint, &point) ? point : nil
     }
 
     private static func copy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {

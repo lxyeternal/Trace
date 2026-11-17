@@ -25,6 +25,7 @@ final class ActivityWatcher: ObservableObject {
     /// Bundle identifiers that are never recorded.
     var excluded: Set<String> = []
     var captureTitles = true
+    var captureTelegramChats = true
     var captureFiles = true
     var captureURLs = true
     /// Whether to record which apps play sound or use the microphone.
@@ -159,11 +160,12 @@ final class ActivityWatcher: ObservableObject {
         let pulse = Self.interval * 5
         let previous = lastWindow?.pid == pid ? lastWindow?.info : nil
         let (titles, files, urls) = (captureTitles, captureFiles, captureURLs)
+        let telegramChat = titles && captureTelegramChats && bundleID == "ru.keepcoder.Telegram"
         let forceNew = breakNext
         breakNext = false
         queue.async { [store] in
             let window = trusted
-                ? AXReader.focusedWindow(pid: pid, isBrowser: isBrowser && urls, previous: previous) : .init()
+                ? AXReader.focusedWindow(pid: pid, isBrowser: isBrowser && urls, telegramChat: telegramChat, previous: previous) : .init()
             let sample = Sample(bundleID: bundleID, appName: name, category: category,
                                 title: titles ? window.title : "",
                                 path: files ? window.path : nil, url: urls ? window.url : nil)
