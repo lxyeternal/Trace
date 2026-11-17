@@ -258,6 +258,8 @@
 "When" = "当";
 "Window" = "窗口";
 "Window titles" = "窗口标题";
+"Telegram chat names" = "Telegram 聊天名称";
+"Group time by the open chat in Telegram for Mac" = "在 Mac 版 Telegram 中按当前打开的聊天分别计时";
 "With no keyboard or mouse input for this long, you count as away" = "键盘和鼠标无操作超过该时长，记为离开";
 "Year" = "年";
 "auto" = "自动";
@@ -453,3 +455,12 @@
 "Back" = "上一步";
 "Get started" = "开始使用";
 "Next" = "下一步";
+"Sessions notice when you leave" = "离开时自动处理专注时段";
+"Away for 15 minutes to 2 hours is left out of a running session. Longer, or a Mac asleep for 30 minutes, ends it at the moment you left. Off: a session runs until you stop it." = "离开 15 分钟到 2 小时，这段时间从进行中的时段里扣除。离开更久，或电脑睡眠满 30 分钟，时段在你离开的那一刻结束。关闭后，时段一直计时到你手动停止。";
+"Away %@ – %@" = "%@ – %@ 你不在";
+"%@ session ended at %@" = "“%@”时段已在 %@ 自动结束";
+"%@ left out of the %@ session, which goes on." = "已从“%2$@”时段中扣除 %1$@，时段继续计时。";
+"You were away for a long time, so it ended when you left." = "你离开了很久，时段在你离开的那一刻结束。";
+"Count that time" = "算上这段";
+"Resume session" = "恢复";
+"Dismiss" = "关闭";

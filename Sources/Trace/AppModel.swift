@@ -119,6 +119,12 @@ final class AppModel: ObservableObject {
     @Published var anySoundMeansPresent: Bool {
         didSet { UserDefaults.standard.set(anySoundMeansPresent, forKey: "anySoundMeansPresent"); watcher.anySoundMeansPresent = anySoundMeansPresent }
     }
+    /// Whether time away is taken out of a running session.
+    @Published var pausesSessionsWhenAway: Bool {
+        didSet { UserDefaults.standard.set(pausesSessionsWhenAway, forKey: "sessionAbsence") }
+    }
+    /// What was done to a session while the user was away, until dismissed.
+    @Published var sessionNotice: SessionNotice?
     @Published var captureURLs: Bool {
         didSet { UserDefaults.standard.set(captureURLs, forKey: "captureURLs"); watcher.captureURLs = captureURLs }
     }
@@ -158,7 +164,7 @@ final class AppModel: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         defaults.register(defaults: ["captureTelegramChats": true, "captureTitles": true, "captureFiles": true, "captureURLs": true,
-                                     "captureBackground": true, "captureOpenApps": true])
+                                     "captureBackground": true, "captureOpenApps": true, "sessionAbsence": true])
         appearance = Appearance(rawValue: defaults.string(forKey: "appearance") ?? "") ?? .system
         language = AppLanguage(rawValue: defaults.string(forKey: "language") ?? "") ?? .system
         let minutes = defaults.integer(forKey: "idleMinutes")
@@ -170,6 +176,7 @@ final class AppModel: ObservableObject {
         captureBackground = defaults.bool(forKey: "captureBackground")
         captureOpenApps = defaults.bool(forKey: "captureOpenApps")
         anySoundMeansPresent = defaults.bool(forKey: "anySoundMeansPresent")
+        pausesSessionsWhenAway = defaults.bool(forKey: "sessionAbsence")
         excludedApps = defaults.stringArray(forKey: "excludedApps") ?? []
         if let id = defaults.string(forKey: "deviceID") {
             deviceID = id
@@ -223,6 +230,7 @@ final class AppModel: ObservableObject {
         watcher.captureOpenApps = captureOpenApps
         watcher.anySoundMeansPresent = anySoundMeansPresent
         watcher.excluded = Set(excludedApps)
+        watcher.onReturn = { [weak self] left, back, asleep in self?.cameBack(left: left, back: back, asleep: asleep) }
 
         L10n.apply(language)
         if demo, let tags = try? store.tags(), let study = tags.first(where: { $0.key == "study" })?.id,
@@ -383,15 +391,58 @@ final class AppModel: ObservableObject {
     func startSession(_ tag: Tag, minutes: Int?) {
         guard let id = tag.id, !isDemo else { return }
         _ = try? store.startSession(tagID: id, targetMinutes: minutes)
+        sessionNotice = nil
         watcher.splitNow()
-        if minutes != nil { Notifier.prepare() }
+        if minutes != nil || pausesSessionsWhenAway { Notifier.prepare() }
         changed()
         runSessionTimer()
     }
 
-    func stopSession() {
-        guard let ended = try? store.endSession() else { return }
+    func stopSession(at end: Date = Date()) {
+        guard let ended = try? store.endSession(at: end) else { return }
         _ = ended
+        sessionNotice = nil
+        watcher.splitNow()
+        changed()
+        runSessionTimer()
+    }
+
+    /// The user is back after `left`. A break is nothing; a longer absence is
+    /// taken out of the running session; a very long one, or a Mac put to
+    /// sleep, means the session was forgotten and ends where the user left.
+    private func cameBack(left: Date, back: Date, asleep: TimeInterval) {
+        guard pausesSessionsWhenAway, !isDemo, let session = running, let id = session.id else { return }
+        let left = max(left, session.start)
+        let action = AbsenceRule.action(away: back.timeIntervalSince(left), asleep: asleep)
+        guard action != .ignore, (try? store.endSession(at: left)) != nil else { return }
+        let name = tags.first { $0.id == session.tagID }?.displayName ?? ""
+        var notice = SessionNotice(kind: .ended, tagName: name, left: left, back: back, session: id)
+        if action == .deduct {
+            // A timed session goes on with what was left of its time.
+            let remaining = session.target.map { max(1, Int((($0 - left.timeIntervalSince(session.start)) / 60).rounded(.up))) }
+            if let next = try? store.startSession(tagID: session.tagID, targetMinutes: remaining, at: back) {
+                notice.kind = .deducted
+                notice.resumed = next.id
+            }
+        }
+        watcher.splitNow()
+        changed()
+        runSessionTimer()
+        sessionNotice = notice
+        Notifier.post(title: notice.title, body: notice.detail)
+    }
+
+    /// Takes back what `cameBack` did: the time away counts after all.
+    func undoSessionNotice() {
+        guard let notice = sessionNotice else { return }
+        sessionNotice = nil
+        if let resumed = notice.resumed {
+            try? store.joinSessions(notice.session, resumed)
+        } else if let session = sessions.first(where: { $0.id == notice.session && $0.device.isEmpty }) {
+            // A timed session whose time is up by now ended when it was due.
+            let due = session.target.map { session.start.addingTimeInterval($0) }
+            try? store.setSessionEnd(id: notice.session, to: due.flatMap { $0 <= Date() ? $0 : nil })
+        }
         watcher.splitNow()
         changed()
         runSessionTimer()
@@ -400,6 +451,7 @@ final class AppModel: ObservableObject {
     func deleteSession(_ session: FocusSession) {
         guard let id = session.id else { return }
         try? store.deleteSession(id: id)
+        if sessionNotice?.session == id || sessionNotice?.resumed == id { sessionNotice = nil }
         if session.isRunning { watcher.splitNow() }
         changed()
         runSessionTimer()
@@ -419,9 +471,11 @@ final class AppModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.clock = Date()
-                if let session = self.running, let target = session.target, session.duration(at: self.clock) >= target {
+                // While the user is away the session is left for `cameBack`.
+                if let session = self.running, let target = session.target, session.duration(at: self.clock) >= target,
+                   !(self.pausesSessionsWhenAway && self.watcher.awaySince != nil) {
                     let name = self.tags.first { $0.id == session.tagID }?.displayName ?? ""
-                    self.stopSession()
+                    self.stopSession(at: session.start.addingTimeInterval(target))
                     Notifier.post(title: String(format: L("%@ session finished"), name),
                                   body: String(format: L("%@ done. Recording goes on as usual."), Fmt.duration(target)))
                 }
@@ -758,4 +812,35 @@ final class AppModel: ObservableObject {
         guard let databaseURL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([databaseURL])
     }
+}
+
+/// What Trace did to a session because the user was away.
+struct SessionNotice: Equatable {
+    enum Kind { case deducted, ended }
+    var kind: Kind
+    var tagName: String
+    var left: Date
+    var back: Date
+    /// The session that was running when the user left.
+    var session: Int64
+    /// The session that carries on from the return, when time was deducted.
+    var resumed: Int64?
+
+    var title: String {
+        switch kind {
+        case .deducted: return String(format: L("Away %@ – %@"), Fmt.time(left), Fmt.time(back))
+        case .ended: return String(format: L("%@ session ended at %@"), tagName, Fmt.time(left))
+        }
+    }
+
+    var detail: String {
+        switch kind {
+        case .deducted:
+            return String(format: L("%@ left out of the %@ session, which goes on."), Fmt.duration(back.timeIntervalSince(left)), tagName)
+        case .ended:
+            return L("You were away for a long time, so it ended when you left.")
+        }
+    }
+
+    var undoTitle: String { kind == .deducted ? L("Count that time") : L("Resume session") }
 }

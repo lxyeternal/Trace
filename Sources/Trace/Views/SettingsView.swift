@@ -102,8 +102,11 @@ struct SettingsView: View {
             .labelsHidden()
             .fixedSize()
         }
-        row(L("Background sound counts too"), L("Also stay counted while music or a podcast plays in the background. Leave it off if sound often plays when you are not at the Mac."), last: true) {
+        row(L("Background sound counts too"), L("Also stay counted while music or a podcast plays in the background. Leave it off if sound often plays when you are not at the Mac.")) {
             Toggle(L("Background sound counts too"), isOn: $model.anySoundMeansPresent).toggleStyle(.switch).labelsHidden()
+        }
+        row(L("Sessions notice when you leave"), L("Away for 15 minutes to 2 hours is left out of a running session. Longer, or a Mac asleep for 30 minutes, ends it at the moment you left. Off: a session runs until you stop it."), last: true) {
+            Toggle(L("Sessions notice when you leave"), isOn: $model.pausesSessionsWhenAway).toggleStyle(.switch).labelsHidden()
         }
     }
 

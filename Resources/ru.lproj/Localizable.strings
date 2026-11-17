@@ -421,3 +421,12 @@
 "Next" = "Далее";
 "Telegram chat names" = "Названия чатов Telegram";
 "Group time by the open chat in Telegram for Mac" = "Суммировать время по открытым чатам в Telegram для Mac";
+"Sessions notice when you leave" = "Сеансы учитывают отсутствие";
+"Away for 15 minutes to 2 hours is left out of a running session. Longer, or a Mac asleep for 30 minutes, ends it at the moment you left. Off: a session runs until you stop it." = "Отсутствие от 15 минут до 2 часов вычитается из текущего сеанса. Если вас не было дольше или Mac спал 30 минут, сеанс завершается в момент вашего ухода. Выключено: сеанс идёт, пока вы его не остановите.";
+"Away %@ – %@" = "Вас не было %@ – %@";
+"%@ session ended at %@" = "Сеанс «%@» завершён в %@";
+"%@ left out of the %@ session, which goes on." = "Из сеанса «%2$@» вычтено %1$@, сеанс продолжается.";
+"You were away for a long time, so it ended when you left." = "Вас долго не было, поэтому сеанс завершён в момент вашего ухода.";
+"Count that time" = "Засчитать это время";
+"Resume session" = "Возобновить";
+"Dismiss" = "Закрыть";

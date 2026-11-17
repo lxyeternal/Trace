@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Sessions notice when you leave**: forgetting to stop a session no longer spoils it. Away for under 15 minutes changes nothing; 15 minutes to 2 hours is left out and the session goes on; longer, or a Mac asleep for 30 minutes, ends the session at the moment you left. Trace says what it did and one click takes it back. Switch it off under Settings to let sessions run until you stop them.
+- **Telegram**: time is shown per chat in Telegram for Mac. Switch it off under Settings › What is recorded. Thanks to David Ange.
+- **Russian**: the whole app is available in Russian. Thanks to David Ange.
+
 ## 0.3.0
 
 - **Faster**: switching between the timeline views no longer stalls. Tag rules are worked out once per record instead of on every redraw.

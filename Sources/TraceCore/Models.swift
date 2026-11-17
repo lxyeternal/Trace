@@ -145,6 +145,30 @@ public struct FocusSession: Codable, Identifiable, Hashable, Sendable, Fetchable
     }
 }
 
+/// What happens to a running session after time away from the Mac.
+public enum AbsenceRule {
+    public enum Action: Equatable, Sendable {
+        /// Too short to matter: the session runs on as if nothing happened.
+        case ignore
+        /// The time away is left out and the session goes on.
+        case deduct
+        /// The session ends at the moment the user left.
+        case end
+    }
+
+    /// Shorter than this is a break, not an absence.
+    public static let shortest: TimeInterval = 15 * 60
+    /// From this long on, the session was forgotten.
+    public static let longest: TimeInterval = 2 * 3600
+    /// A Mac asleep this long was put away.
+    public static let longestSleep: TimeInterval = 30 * 60
+
+    public static func action(away: TimeInterval, asleep: TimeInterval = 0) -> Action {
+        if away >= longest || asleep >= longestSleep { return .end }
+        return away >= shortest ? .deduct : .ignore
+    }
+}
+
 /// A daily target for a tag: at least, or at most, so many minutes.
 public struct Goal: Codable, Identifiable, Hashable, Sendable, FetchableRecord, MutablePersistableRecord {
     public enum Kind: String, Codable, Sendable, CaseIterable { case atLeast, atMost }

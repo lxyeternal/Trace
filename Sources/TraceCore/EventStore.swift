@@ -353,6 +353,35 @@ public final class EventStore: @unchecked Sendable {
         }
     }
 
+    /// Sets when a session of this Mac ended; nil lets it run again. Fails
+    /// when another session is running, since only one can.
+    @discardableResult
+    public func setSessionEnd(id: Int64, to end: Date?) throws -> Bool {
+        try db.write { db in
+            guard var session = try FocusSession.fetchOne(db, key: id), session.device.isEmpty else { return false }
+            if end == nil, try FocusSession.filter(Column("device") == "" && Column("end") == nil && Column("id") != id)
+                .fetchCount(db) > 0 { return false }
+            session.end = end.map { max($0, session.start) }
+            try session.update(db)
+            return true
+        }
+    }
+
+    /// Makes one session of two: the first runs until the second ended (or
+    /// still runs, if the second does), and the second is removed.
+    @discardableResult
+    public func joinSessions(_ first: Int64, _ second: Int64) throws -> Bool {
+        try db.write { db in
+            guard var a = try FocusSession.fetchOne(db, key: first),
+                  let b = try FocusSession.fetchOne(db, key: second),
+                  a.device.isEmpty, b.device.isEmpty, b.start >= a.start else { return false }
+            a.end = b.end
+            try FocusSession.deleteOne(db, key: second)
+            try a.update(db)
+            return true
+        }
+    }
+
     /// Removes a session; the records in it go back to their own tags.
     public func deleteSession(id: Int64) throws {
         _ = try db.write { db in try FocusSession.deleteOne(db, key: id) }

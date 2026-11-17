@@ -47,6 +47,20 @@ final class ActivityWatcher: ObservableObject {
     private var breakNext = false
     private var resume: Timer?
 
+    /// The last moment the user was at the Mac, while they are away: no
+    /// input for the idle time, the screen locked, or the Mac asleep.
+    private(set) var awaySince: Date?
+    /// Called when the user is back, with when they left, when they came
+    /// back and how much of that the Mac was asleep.
+    var onReturn: ((_ left: Date, _ back: Date, _ asleep: TimeInterval) -> Void)?
+    private var lastListening = Date.distantPast
+    private var asleepSince: Date?
+    private var asleep: TimeInterval = 0
+    private var isLocked = false
+    /// Waking and unlocking are not yet being back: input has to follow.
+    private var backAfter = Date.distantPast
+    private var presenceObservers: [(NotificationCenter, NSObjectProtocol)] = []
+
     private let store: EventStore
     private let queue = DispatchQueue(label: "trace.watcher", qos: .utility)
     private var timer: Timer?
@@ -87,7 +101,64 @@ final class ActivityWatcher: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+        observePresence()
         tick()
+    }
+
+    /// Sleep and the lock screen say for certain that nobody is there.
+    private func observePresence() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        let distributed = DistributedNotificationCenter.default()
+        func on(_ center: NotificationCenter, _ name: Notification.Name, _ action: @escaping @MainActor (ActivityWatcher) -> Void) {
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in if let self { action(self) } }
+            }
+            presenceObservers.append((center, token))
+        }
+        on(workspace, NSWorkspace.willSleepNotification) { watcher in
+            watcher.leave()
+            if watcher.asleepSince == nil { watcher.asleepSince = Date() }
+        }
+        on(workspace, NSWorkspace.didWakeNotification) { watcher in
+            let now = Date()
+            if let since = watcher.asleepSince { watcher.asleep += now.timeIntervalSince(since) }
+            watcher.asleepSince = nil
+            watcher.backAfter = now
+        }
+        on(distributed, Notification.Name("com.apple.screenIsLocked")) { watcher in
+            watcher.leave()
+            watcher.isLocked = true
+        }
+        on(distributed, Notification.Name("com.apple.screenIsUnlocked")) { watcher in
+            watcher.isLocked = false
+            watcher.backAfter = Date()
+        }
+    }
+
+    private static var idleSeconds: TimeInterval {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    }
+
+    /// Notes that the user has left, as of their last sign of life.
+    private func leave(now: Date = Date(), idleSeconds: TimeInterval? = nil) {
+        guard awaySince == nil else { return }
+        awaySince = min(now, max(now.addingTimeInterval(-(idleSeconds ?? Self.idleSeconds)), lastListening))
+    }
+
+    /// Keeps `awaySince` up to date and reports the return.
+    private func trackPresence(now: Date, idleSeconds: TimeInterval, listening: Bool) {
+        if listening { lastListening = now }
+        guard let since = awaySince else {
+            if idleSeconds >= idleThreshold && !listening { leave(now: now, idleSeconds: idleSeconds) }
+            return
+        }
+        guard !isLocked, asleepSince == nil else { return }
+        // Back means input after leaving, and after waking or unlocking.
+        guard idleSeconds < now.timeIntervalSince(max(since, backAfter)) - 1 else { return }
+        let slept = asleep
+        awaySince = nil
+        asleep = 0
+        onReturn?(since, now, slept)
     }
 
     /// Makes the next sample open a new record, so that whatever comes after
@@ -112,17 +183,16 @@ final class ActivityWatcher: ObservableObject {
     private func tick() {
         let trusted = AXReader.isTrusted
         if trusted != isTrusted { isTrusted = trusted }
-        guard !isPaused, !busy else { return }
-
         let now = Date()
         let front = NSWorkspace.shared.frontmostApplication
-        let anyInput = CGEventType(rawValue: ~0)!
-        let idleSeconds = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
+        let idleSeconds = Self.idleSeconds
         // No keyboard or mouse is not the same as not being there. Listening in
         // on a call, or watching a video in the app in front, counts; music
         // from the background counts only if the user says so.
         let listening = onCall || (front?.bundleIdentifier.map(audible.contains) ?? false)
             || (anySoundMeansPresent && !audible.isEmpty)
+        trackPresence(now: now, idleSeconds: idleSeconds, listening: listening)
+        guard !isPaused, !busy else { return }
         sampleBackground(at: now)
         if idleSeconds >= idleThreshold && !listening {
             if !isIdle {

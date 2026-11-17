@@ -776,4 +776,47 @@ final class TraceCoreTests: XCTestCase {
         // B has no session of its own running.
         XCTAssertNil(try b.runningSession())
     }
+
+    func testAbsenceRule() {
+        XCTAssertEqual(AbsenceRule.action(away: 14 * 60), .ignore)
+        XCTAssertEqual(AbsenceRule.action(away: 15 * 60), .deduct)
+        XCTAssertEqual(AbsenceRule.action(away: 119 * 60), .deduct)
+        XCTAssertEqual(AbsenceRule.action(away: 2 * 3600), .end)
+        // A Mac that slept for half an hour was put away, however short the absence.
+        XCTAssertEqual(AbsenceRule.action(away: 40 * 60, asleep: 30 * 60), .end)
+        XCTAssertEqual(AbsenceRule.action(away: 40 * 60, asleep: 29 * 60), .deduct)
+    }
+
+    func testTimeAwayIsTakenOutOfASessionAndCanBeCountedAgain() throws {
+        let store = try EventStore()
+        let tag = try XCTUnwrap(try store.tags().first?.id)
+        let first = try XCTUnwrap(try store.startSession(tagID: tag, targetMinutes: 50, at: t0).id)
+        // Left after 20 minutes, back 40 minutes later.
+        let (left, back) = (t0 + 20 * 60, t0 + 60 * 60)
+        try store.endSession(at: left)
+        let second = try XCTUnwrap(try store.startSession(tagID: tag, targetMinutes: 30, at: back).id)
+        XCTAssertEqual(try store.sessions().map { $0.duration(at: back + 600) }, [20 * 60, 600])
+
+        XCTAssertTrue(try store.joinSessions(first, second))
+        let joined = try store.sessions()
+        XCTAssertEqual(joined.count, 1)
+        XCTAssertEqual(joined[0].start, t0)
+        XCTAssertTrue(joined[0].isRunning)
+        XCTAssertEqual(joined[0].targetMinutes, 50)
+    }
+
+    func testAnEndedSessionCanRunAgainUnlessAnotherDoes() throws {
+        let store = try EventStore()
+        let tag = try XCTUnwrap(try store.tags().first?.id)
+        let first = try XCTUnwrap(try store.startSession(tagID: tag, at: t0).id)
+        try store.endSession(at: t0 + 600)
+        XCTAssertTrue(try store.setSessionEnd(id: first, to: nil))
+        XCTAssertEqual(try store.runningSession()?.id, first)
+
+        try store.endSession(at: t0 + 600)
+        try store.startSession(tagID: tag, at: t0 + 900)
+        XCTAssertFalse(try store.setSessionEnd(id: first, to: nil))
+        XCTAssertTrue(try store.setSessionEnd(id: first, to: t0 + 700))
+        XCTAssertEqual(try store.sessions().first?.end, t0 + 700)
+    }
 }

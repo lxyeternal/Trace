@@ -51,6 +51,7 @@ struct RootView: View {
             Rectangle().fill(Theme.line).frame(width: 1)
             VStack(spacing: 0) {
                 if !watcher.isTrusted && !model.showsOnboarding { PermissionBanner() }
+                if let notice = model.sessionNotice { SessionNoticeBanner(notice: notice) }
                 Group {
                     switch model.pane {
                     case .overview: OverviewView()
@@ -301,6 +302,31 @@ struct PermissionBanner: View {
         .padding(14)
         .background(Theme.soft, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .padding(EdgeInsets(top: WindowMetrics.pageTopInset, leading: 28, bottom: 0, trailing: 28))
+    }
+}
+
+/// Says what happened to a session while the user was away, with a way back.
+struct SessionNoticeBanner: View {
+    @EnvironmentObject private var model: AppModel
+    let notice: SessionNotice
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: notice.kind == .ended ? "moon.zzz" : "figure.walk")
+                .font(.system(size: 18)).foregroundStyle(Theme.accent).frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(notice.title).fontWeight(.semibold)
+                Text(notice.detail).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(2)
+            }
+            .layoutPriority(1)
+            Spacer(minLength: 12)
+            Button(notice.undoTitle) { model.undoSessionNotice() }.buttonStyle(.trBordered)
+            IconButton(symbol: "xmark", label: L("Dismiss")) { model.sessionNotice = nil }
+        }
+        .padding(14)
+        .background(Theme.soft, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(EdgeInsets(top: WindowMetrics.pageTopInset, leading: 28, bottom: 0, trailing: 28))
+        .transition(.opacity)
     }
 }
 
