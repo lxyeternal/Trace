@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - **Sessions notice when you leave**: forgetting to stop a session no longer spoils it. Away for under 15 minutes changes nothing; 15 minutes to 2 hours is left out and the session goes on; longer, or a Mac asleep for 30 minutes, ends the session at the moment you left. Trace says what it did and one click takes it back. Switch it off under Settings to let sessions run until you stop them.
 - **Tag time afterwards**: forgot to start a session? Pick a period in the timeline and choose Count as…, or add a past session on the Focus page. Everything in that time counts as the tag.
