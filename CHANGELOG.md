@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- **Fixed**: after starting a session from the menu bar, the panel stayed as tall as the list of tags had been, with its contents adrift in a large translucent area away from the menu bar. The panel now shrinks back to fit.
+
 ## 0.4.0
 
 - **Sessions notice when you leave**: forgetting to stop a session no longer spoils it. Away for under 15 minutes changes nothing; 15 minutes to 2 hours is left out and the session goes on; longer, or a Mac asleep for 30 minutes, ends the session at the moment you left. Trace says what it did and one click takes it back. Switch it off under Settings to let sessions run until you stop them.

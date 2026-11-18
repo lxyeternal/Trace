@@ -9,6 +9,7 @@ struct MenuBarView: View {
     /// The list of tags to start a session with is unfolded.
     @State private var picking: Bool
     @State private var minutes: Int?
+    @State private var height: CGFloat = 0
 
     init(startsPicking: Bool = false) {
         _picking = State(initialValue: startsPicking)
@@ -166,6 +167,13 @@ struct MenuBarView: View {
             .padding(.bottom, 5)
         }
         .frame(width: 300)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: PanelHeightKey.self, value: geo.size.height)
+        })
+        .onPreferenceChange(PanelHeightKey.self) { height = $0 }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(PanelSizer(height: height))
         .background(MaterialBackground(material: .menu).ignoresSafeArea())
         .font(.system(size: 13))
         .monospacedDigit()
@@ -270,6 +278,32 @@ private struct MenuRowStyle: ButtonStyle {
                 .contentShape(Rectangle())
                 .padding(.horizontal, 6)
                 .onHover { hovering = $0 }
+        }
+    }
+}
+
+private struct PanelHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// Keeps the panel's window as tall as its contents. The window grows by
+/// itself when the contents do, but does not shrink again: after the list of
+/// tags folded away it stayed tall, with the contents adrift in the middle.
+private struct PanelSizer: NSViewRepresentable {
+    let height: CGFloat
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let height = height
+        DispatchQueue.main.async {
+            guard height > 0, let window = view.window, abs(window.frame.height - height) > 0.5 else { return }
+            // The top edge stays where it is, under the menu bar.
+            var frame = window.frame
+            frame.origin.y = frame.maxY - height
+            frame.size.height = height
+            window.setFrame(frame, display: true)
         }
     }
 }
