@@ -819,4 +819,58 @@ final class TraceCoreTests: XCTestCase {
         XCTAssertTrue(try store.setSessionEnd(id: first, to: t0 + 700))
         XCTAssertEqual(try store.sessions().first?.end, t0 + 700)
     }
+
+    func testAPastSessionClaimsItsPeriodAndCutsRecordsAtItsEnds() throws {
+        let store = try EventStore()
+        let tags = try store.tags()
+        let study = try XCTUnwrap(tags.first { $0.key == "study" }?.id)
+        // One record from 0 to 100 s, another from 100 to 200 s.
+        for (offset, name) in [(0, "A.swift"), (100, "A.swift"), (100, "B.swift"), (200, "B.swift")] {
+            try store.heartbeat(xcode(name), at: t0 + Double(offset), pulse: 200, forceNew: offset == 100 && name == "B.swift")
+        }
+        try store.addSession(tagID: study, from: t0 + 50, to: t0 + 150)
+
+        let events = try store.events(from: t0, to: t0 + 300)
+        XCTAssertEqual(events.map { [$0.start.timeIntervalSince(t0), $0.end.timeIntervalSince(t0)] },
+                       [[0, 50], [50, 100], [100, 150], [150, 200]])
+        let tagger = try store.tagger()
+        XCTAssertEqual(events.map { tagger.primary(for: $0)?.key }, ["dev", "study", "study", "dev"])
+    }
+
+    func testAPastSessionMakesRoomAmongOtherSessions() throws {
+        let store = try EventStore()
+        let tags = try store.tags()
+        let (study, games) = (try XCTUnwrap(tags.first { $0.key == "study" }?.id), try XCTUnwrap(tags.first { $0.key == "games" }?.id))
+        // A running session since t0; an hour in the middle turns out to have been a game.
+        try store.startSession(tagID: study, at: t0)
+        try store.addSession(tagID: games, from: t0 + 3600, to: t0 + 7200)
+
+        let sessions = try store.sessions()
+        XCTAssertEqual(sessions.map(\.tagID), [study, games, study])
+        XCTAssertEqual(sessions.map { $0.start.timeIntervalSince(t0) }, [0, 3600, 7200])
+        XCTAssertEqual(sessions.map { $0.end?.timeIntervalSince(t0) }, [3600, 7200, nil])
+        XCTAssertEqual(try store.runningSession()?.start, t0 + 7200)
+
+        // A session that lies inside the new one is replaced by it.
+        try store.addSession(tagID: study, from: t0 + 3000, to: t0 + 8000)
+        XCTAssertEqual(try store.sessions().map { $0.start.timeIntervalSince(t0) }, [0, 3000, 8000])
+    }
+
+    func testAppsAndSitesOfATagAreSetInOneGo() throws {
+        let store = try EventStore()
+        let tag = try XCTUnwrap(try store.addTag(name: "Meetings", colorIndex: 2).id)
+        try store.addRule(tagID: tag, field: .title, op: .contains, value: "standup")
+        try store.setSources(tagID: tag, apps: ["us.zoom.xos", "com.tencent.meeting"], sites: ["meet.google.com"])
+        try store.setSources(tagID: tag, apps: ["us.zoom.xos"], sites: ["meet.google.com", "zoom.us"])
+
+        let rules = try store.rules().filter { $0.tagID == tag }
+        XCTAssertEqual(Set(rules.map { "\($0.field.rawValue):\($0.value)" }),
+                       ["title:standup", "app:us.zoom.xos", "url:meet.google.com", "url:zoom.us"])
+        // A custom tag comes before the presets, so Zoom is a meeting now.
+        let zoom = ActivityEvent(sample: Sample(bundleID: "us.zoom.xos", appName: "Zoom"), start: t0, end: t0 + 60)
+        XCTAssertEqual(try store.tagger().primary(for: zoom)?.name, "Meetings")
+
+        try store.renameTag(id: tag, to: "  Calls ")
+        XCTAssertEqual(try store.tags().first { $0.id == tag }?.name, "Calls")
+    }
 }

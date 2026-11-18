@@ -607,6 +607,37 @@ final class AppModel: ObservableObject {
         changed()
     }
 
+    /// A new tag carried by these apps and sites.
+    func addTag(name: String, colorIndex: Int, apps: Set<String>, sites: Set<String>) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, let id = try? store.addTag(name: trimmed, colorIndex: colorIndex).id else { return }
+        try? store.setSources(tagID: id, apps: apps, sites: sites)
+        changed()
+    }
+
+    func renameTag(_ tag: Tag, to name: String) {
+        guard let id = tag.id else { return }
+        try? store.renameTag(id: id, to: name)
+        changed()
+    }
+
+    func setSources(for tag: Tag, apps: Set<String>, sites: Set<String>) {
+        guard let id = tag.id else { return }
+        try? store.setSources(tagID: id, apps: apps, sites: sites)
+        changed()
+    }
+
+    /// Counts what was done on this Mac in `period` as `tag`, after the fact.
+    func tagPeriod(_ period: DateInterval, as tag: Tag) {
+        let end = min(period.end, Date())
+        guard let id = tag.id, !isDemo, period.start < end else { return }
+        _ = try? store.addSession(tagID: id, from: period.start, to: end)
+        sessionNotice = nil
+        watcher.splitNow()
+        changed()
+        runSessionTimer()
+    }
+
     func deleteTag(_ tag: Tag) {
         guard let id = tag.id else { return }
         try? store.deleteTag(id: id)

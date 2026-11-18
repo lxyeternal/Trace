@@ -74,16 +74,24 @@ enum Screenshots {
             }
             model.language = language
             try? await Task.sleep(for: .seconds(0.5))
-            if let data = await menuPanel(model: model) {
-                try? data.write(to: folder.appendingPathComponent("menu.png"))
+            let watcher = model.watcher
+            let panels: [(String, AnyView)] = [
+                ("menu", AnyView(MenuBarView())),
+                ("menu-session", AnyView(MenuBarView(startsPicking: true))),
+                ("new-tag", AnyView(NewTagForm().frame(width: 900).padding(20).background(Theme.bg))),
+            ] + model.tags.prefix(1).map { ("tag-sources", AnyView(TagSourcesSheet(tag: $0))) }
+            for (name, view) in panels {
+                if let data = await panel(view.environmentObject(model).environmentObject(watcher)) {
+                    try? data.write(to: folder.appendingPathComponent("\(name).png"))
+                }
             }
             NSApp.terminate(nil)
         }
     }
 
-    /// The menu bar panel, shown in a window of its own on the menu material.
-    private static func menuPanel(model: AppModel) async -> Data? {
-        let host = NSHostingView(rootView: MenuBarView().environmentObject(model).environmentObject(model.watcher))
+    /// A panel or sheet, shown in a window of its own on the menu material.
+    private static func panel(_ view: some View) async -> Data? {
+        let host = NSHostingView(rootView: view)
         let size = host.fittingSize
         let effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
         effect.material = .menu

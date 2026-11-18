@@ -112,6 +112,29 @@ private struct OutlineCard: View {
                         }
                         .buttonStyle(.plain)
                         .help(L("Show the whole day"))
+                        if !model.isDemo, (model.deviceFilter ?? "").isEmpty, selection.start < Date() {
+                            Menu {
+                                ForEach(model.tags.filter(\.enabled)) { tag in
+                                    Button(tag.displayName) { model.tagPeriod(selection, as: tag) }
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "tag").font(.system(size: 9, weight: .bold))
+                                    Text(L("Count as…"))
+                                }
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.ink)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Theme.fill, in: Capsule())
+                                .contentShape(Capsule())
+                            }
+                            .menuStyle(.button)
+                            .buttonStyle(.plain)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                            .help(L("Count everything on this Mac in this period as one tag, like a session added afterwards"))
+                        }
                     }
                     Spacer()
                 }

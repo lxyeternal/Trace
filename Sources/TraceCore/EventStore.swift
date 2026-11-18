@@ -263,6 +263,42 @@ public final class EventStore: @unchecked Sendable {
         }
     }
 
+    public func renameTag(id: Int64, to name: String) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        try db.write { db in
+            guard var tag = try Tag.fetchOne(db, key: id) else { return }
+            tag.name = trimmed
+            try tag.update(db)
+            try Self.touchTagging(db)
+        }
+    }
+
+    /// Makes the apps and sites that carry a tag match the given ones: a rule
+    /// per app (by bundle identifier) and per site (the address contains it).
+    /// Rules of other kinds are left alone.
+    public func setSources(tagID: Int64, apps: Set<String>, sites: Set<String>) throws {
+        try db.write { db in
+            var apps = apps, sites = Set(sites.map { $0.lowercased() })
+            for rule in try Rule.filter(Column("tagID") == tagID).fetchAll(db) {
+                if rule.field == .app, rule.op == .equals {
+                    if apps.remove(rule.value) == nil { try rule.delete(db) }
+                } else if rule.field == .url, rule.op == .contains {
+                    if sites.remove(rule.value.lowercased()) == nil { try rule.delete(db) }
+                }
+            }
+            for app in apps.sorted() where !app.isEmpty {
+                var rule = Rule(tagID: tagID, field: .app, op: .equals, value: app)
+                try rule.insert(db)
+            }
+            for site in sites.sorted() where !site.isEmpty {
+                var rule = Rule(tagID: tagID, field: .url, op: .contains, value: site)
+                try rule.insert(db)
+            }
+            try Self.touchTagging(db)
+        }
+    }
+
     public func deleteTag(id: Int64) throws {
         try db.write { db in
             _ = try Tag.deleteOne(db, key: id)
@@ -349,6 +385,58 @@ public final class EventStore: @unchecked Sendable {
                 .order(Column("start").desc).fetchOne(db) else { return nil }
             session.end = max(now, session.start)
             try session.update(db)
+            return session
+        }
+    }
+
+    /// Adds a session after the fact: what was done on this Mac between
+    /// `from` and `to` counts as the tag. Records that reach across either end
+    /// are cut there, and sessions already in that time make room.
+    @discardableResult
+    public func addSession(tagID: Int64, from: Date, to: Date) throws -> FocusSession? {
+        guard from < to else { return nil }
+        return try db.write { db in
+            for moment in [from, to] {
+                let across = try ActivityEvent
+                    .filter(Column("device") == "" && Column("layer") == 0 && Column("start") < moment && Column("end") > moment)
+                    .fetchAll(db)
+                for var event in across {
+                    guard let id = event.id else { continue }
+                    var tail = event
+                    tail.id = nil
+                    tail.start = moment
+                    event.end = moment
+                    try event.update(db)
+                    try tail.insert(db)
+                    // Tags put on the record by hand stay on both halves.
+                    try db.execute(sql: "INSERT INTO eventTag (eventID, tagID, removed) SELECT ?, tagID, removed FROM eventTag WHERE eventID = ?",
+                                   arguments: [tail.id, id])
+                }
+            }
+            for var other in try FocusSession.filter(Column("device") == "").fetchAll(db) {
+                let end = other.end ?? .distantFuture
+                guard other.start < to, end > from else { continue }
+                if other.start >= from, end <= to {
+                    try other.delete(db)
+                } else if other.start < from, end > to {
+                    // The new session sits in the middle: the rest carries on after it.
+                    var rest = FocusSession(tagID: other.tagID, start: to, end: other.end)
+                    if other.end == nil, let target = other.target {
+                        rest.targetMinutes = max(1, Int(((target - to.timeIntervalSince(other.start)) / 60).rounded(.up)))
+                    }
+                    other.end = from
+                    try other.update(db)
+                    try rest.insert(db)
+                } else if other.start < from {
+                    other.end = from
+                    try other.update(db)
+                } else {
+                    other.start = to
+                    try other.update(db)
+                }
+            }
+            var session = FocusSession(tagID: tagID, start: from, end: to)
+            try session.insert(db)
             return session
         }
     }

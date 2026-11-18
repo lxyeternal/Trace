@@ -74,6 +74,10 @@ private struct TagCard: View {
     let stats: TagWeekStats
 
     @State private var editsGoal = false
+    @State private var editsSources = false
+    @State private var renames = false
+    @State private var deletes = false
+    @State private var newName = ""
 
     private var rules: [Rule] { model.rules.filter { $0.tagID == tag.id } }
     private var goal: Goal? { model.goals.first { $0.tagID == tag.id } }
@@ -103,22 +107,31 @@ private struct TagCard: View {
                             .toggleStyle(.switch)
                             .controlSize(.small)
                             .labelsHidden()
-                    } else {
-                        Menu {
-                            Button(L("Edit rules")) { model.pane = .rules }
-                            Button(L("Delete tag"), role: .destructive) { model.deleteTag(tag) }
-                        } label: {
-                            Image(systemName: "ellipsis").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.muted)
-                        }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .frame(width: 28, height: 28)
-                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.line))
-                        .accessibilityLabel(String(format: L("Edit tag %@"), tag.displayName))
                     }
+                    Menu {
+                        Button(L("Rename…")) { newName = tag.displayName; renames = true }
+                        Button(L("Apps and sites…")) { editsSources = true }
+                        Button(L("Edit rules")) { model.pane = .rules }
+                        if !tag.isPreset {
+                            Divider()
+                            Button(L("Delete tag"), role: .destructive) { deletes = true }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Theme.muted)
+                            .frame(width: 28, height: 28)
+                            .background(Theme.fill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel(String(format: L("Edit tag %@"), tag.displayName))
                 }
                 Text(ruleSummary)
-                    .font(tag.isPreset ? .system(size: 12) : Theme.mono)
+                    .font(.system(size: 12))
                     .foregroundStyle(Theme.muted)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, minHeight: 34, alignment: .topLeading)
@@ -154,6 +167,18 @@ private struct TagCard: View {
             }
             .opacity(tag.enabled ? 1 : 0.5)
         }
+        .sheet(isPresented: $editsSources) { TagSourcesSheet(tag: tag).environmentObject(model) }
+        .alert(L("Rename tag"), isPresented: $renames) {
+            TextField(L("Name"), text: $newName)
+            Button(L("Save")) { model.renameTag(tag, to: newName) }
+            Button(L("Cancel"), role: .cancel) {}
+        }
+        .confirmationDialog(String(format: L("Delete the tag %@?"), tag.displayName), isPresented: $deletes) {
+            Button(L("Delete"), role: .destructive) { model.deleteTag(tag) }
+            Button(L("Cancel"), role: .cancel) {}
+        } message: {
+            Text(L("Its rules, goal and sessions go with it. Records are kept."))
+        }
     }
 
     private var footnote: String {
@@ -165,7 +190,7 @@ private struct TagCard: View {
 
     private var ruleSummary: String {
         if rules.isEmpty { return L("No rules") }
-        if !tag.isPreset, let rule = rules.first {
+        if !tag.isPreset, rules.count == 1, let rule = rules.first, rule.field != .app {
             return "\(rule.field.displayName) \(rule.op.displayName) \(rule.value)"
         }
         return rules.prefix(5).map(\.shortValue).joined(separator: L(", "))
@@ -193,7 +218,11 @@ extension Rule {
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: value) {
                 return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
             }
-            return Self.knownApps[value] ?? value.split(separator: ".").last.map(String.init) ?? value
+            if let known = Self.knownApps[value] { return known }
+            // "com.sublimetext.4" reads better as "sublimetext 4" than as "4".
+            let parts = value.split(separator: ".").map(String.init)
+            if let last = parts.last, parts.count > 1, last.allSatisfy(\.isNumber) { return "\(parts[parts.count - 2]) \(last)" }
+            return parts.last ?? value
         default: return value
         }
     }
@@ -204,49 +233,77 @@ struct NewTagForm: View {
     var done: () -> Void = {}
     @State private var name = ""
     @State private var colorIndex = 6
-    @State private var field: RuleField = .path
-    @State private var op: RuleOp = .contains
-    @State private var value = ""
+    @State private var apps: Set<String> = []
+    @State private var sites: [String] = []
+    @State private var picks = false
     @FocusState private var nameFocused: Bool
+
+    private var chosen: String {
+        if apps.isEmpty && sites.isEmpty { return L("Choose apps and sites…") }
+        var parts: [String] = []
+        if !apps.isEmpty { parts.append(String(format: L("%d apps"), apps.count)) }
+        if !sites.isEmpty { parts.append(String(format: L("%d sites"), sites.count)) }
+        return parts.joined(separator: L(", "))
+    }
 
     var body: some View {
         Card(padding: .hv(20, 18)) {
-            HStack(alignment: .bottom, spacing: 14) {
-                labeled(L("Name")) {
-                    TextField(L("e.g. Thesis"), text: $name)
-                        .textFieldStyle(.plain)
-                        .focused($nameFocused)
-                        .padding(.horizontal, 10)
-                        .frame(width: 160, height: 32)
-                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.line))
-                }
-                labeled(L("Colour")) {
-                    HStack(spacing: 6) {
-                        ForEach(Palette.colors.indices, id: \.self) { index in
-                            Button { colorIndex = index } label: {
-                                Circle().fill(Palette.color(index)).frame(width: 18, height: 18)
-                                    .padding(3)
-                                    .overlay(Circle().strokeBorder(colorIndex == index ? Theme.ink : .clear, lineWidth: 2))
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .bottom, spacing: 14) {
+                    labeled(L("Name")) {
+                        TextField(L("e.g. Meetings"), text: $name)
+                            .textFieldStyle(.plain)
+                            .focused($nameFocused)
+                            .padding(.horizontal, 10)
+                            .frame(width: 180, height: 32)
+                            .background(Theme.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    labeled(L("Colour")) {
+                        HStack(spacing: 6) {
+                            ForEach(Palette.colors.indices, id: \.self) { index in
+                                Button { colorIndex = index } label: {
+                                    Circle().fill(Palette.color(index)).frame(width: 18, height: 18)
+                                        .padding(3)
+                                        .overlay(Circle().strokeBorder(colorIndex == index ? Theme.ink : .clear, lineWidth: 2))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("\(L("Colour")) \(index + 1)")
+                                .accessibilityAddTraits(colorIndex == index ? .isSelected : [])
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("\(L("Colour")) \(index + 1)")
-                            .accessibilityAddTraits(colorIndex == index ? .isSelected : [])
+                        }
+                        .frame(height: 32)
+                    }
+                    labeled(L("Applied automatically to")) {
+                        Button { picks = true } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "square.grid.2x2").font(.system(size: 11, weight: .semibold))
+                                Text(chosen).fontWeight(.medium)
+                            }
+                            .foregroundStyle(apps.isEmpty && sites.isEmpty ? Theme.accent : Theme.ink)
+                        }
+                        .buttonStyle(TRButtonStyle(kind: .bordered, height: 32))
+                        .popover(isPresented: $picks, arrowEdge: .bottom) {
+                            VStack(alignment: .trailing, spacing: 14) {
+                                SourcePicker(apps: $apps, sites: $sites)
+                                Button(L("Done")) { picks = false }.buttonStyle(.trProminent)
+                            }
+                            .padding(18)
+                            .frame(width: 440)
+                            .font(.system(size: 13))
                         }
                     }
-                    .frame(height: 32)
+                    Spacer(minLength: 0)
+                    Button(L("Cancel"), action: done).buttonStyle(TRButtonStyle(kind: .bordered, height: 32))
+                    Button(L("Save")) {
+                        model.addTag(name: name, colorIndex: colorIndex, apps: apps, sites: Set(sites))
+                        done()
+                    }
+                    .buttonStyle(TRButtonStyle(kind: .prominent, height: 32))
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-                labeled(L("Apply automatically when (leave empty to tag by hand only)")) {
-                    RuleFields(field: $field, op: $op, value: $value)
-                }
-                Button(L("Save")) {
-                    model.addTag(name: name, colorIndex: colorIndex, field: field, op: op, value: value)
-                    name = ""
-                    value = ""
-                    done()
-                }
-                .buttonStyle(TRButtonStyle(kind: .prominent, height: 32))
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button(L("Cancel"), action: done).buttonStyle(TRButtonStyle(kind: .bordered, height: 32))
+                Text(L("Pick nothing to use the tag by hand only. Rules on file paths or window titles can be added on the Rules page."))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.muted)
             }
         }
         .onAppear { nameFocused = true }

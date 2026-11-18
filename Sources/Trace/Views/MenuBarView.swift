@@ -6,6 +6,13 @@ struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var watcher: ActivityWatcher
     @Environment(\.openWindow) private var openWindow
+    /// The list of tags to start a session with is unfolded.
+    @State private var picking: Bool
+    @State private var minutes: Int?
+
+    init(startsPicking: Bool = false) {
+        _picking = State(initialValue: startsPicking)
+    }
 
     private var state: (title: String, color: Color) {
         if watcher.isPaused { return (L("Paused"), Palette.color(3)) }
@@ -124,20 +131,13 @@ struct MenuBarView: View {
                 if model.running != nil {
                     RunningSessionPill(plain: true).padding(.horizontal, 14).padding(.vertical, 5)
                 } else {
-                    Menu {
-                        ForEach(model.tags.filter(\.enabled)) { tag in
-                            Menu(tag.displayName) {
-                                Button(L("Until I stop it")) { model.startSession(tag, minutes: nil) }
-                                ForEach([25, 50, 60, 120], id: \.self) { minutes in
-                                    Button(Fmt.duration(TimeInterval(minutes * 60))) { model.startSession(tag, minutes: minutes) }
-                                }
-                            }
-                        }
-                    } label: {
-                        MenuRowLabel(title: L("Start a session…"), showsChevron: true)
+                    // Unfolds in place: a menu on top of this panel would close
+                    // each time the panel redraws, which it does every two seconds.
+                    Button { picking.toggle() } label: {
+                        MenuRowLabel(title: L("Start a session…"), showsChevron: true, isOpen: picking)
                     }
-                    .menuIndicator(.hidden)
                     .buttonStyle(MenuRowStyle())
+                    if picking { sessionPicker }
                 }
                 Button {
                     if watcher.isPaused { watcher.isPaused = false } else { watcher.pause(for: 15 * 60) }
@@ -172,6 +172,53 @@ struct MenuBarView: View {
         .onAppear { model.goToToday(); model.reload() }
     }
 
+    /// How long, then which tag: a click on a tag starts the session.
+    private var sessionPicker: some View {
+        let tags = model.tags.filter(\.enabled)
+        let lengths: [Int?] = [nil, 25, 50, 60, 120]
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                ForEach(lengths, id: \.self) { length in
+                    let isOn = length == minutes
+                    Button { minutes = length } label: {
+                        Text(length.map { Fmt.duration(TimeInterval($0 * 60)) } ?? L("Until I stop"))
+                            .font(.system(size: 11, weight: isOn ? .semibold : .regular))
+                            .lineLimit(1)
+                            .padding(.horizontal, 7)
+                            .frame(height: 22)
+                            .frame(maxWidth: length == nil ? .infinity : nil)
+                            .background(.primary.opacity(isOn ? 0.14 : 0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(isOn ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(tags) { tag in
+                        Button {
+                            model.startSession(tag, minutes: minutes)
+                            picking = false
+                        } label: {
+                            HStack(spacing: 8) {
+                                Swatch(tag, size: 8, round: true)
+                                Text(tag.displayName).lineLimit(1)
+                                Spacer(minLength: 8)
+                                Image(systemName: "play.fill").font(.system(size: 8)).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(MenuRowStyle())
+                    }
+                }
+            }
+            .frame(height: min(CGFloat(tags.count) * 24, 216))
+        }
+        .padding(.bottom, 4)
+    }
+
     private var separator: some View {
         Rectangle().fill(.primary.opacity(0.1)).frame(height: 1).padding(.horizontal, 14)
     }
@@ -190,6 +237,7 @@ struct MenuBarView: View {
 private struct MenuRowLabel: View {
     let title: String
     var showsChevron = false
+    var isOpen = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -197,6 +245,7 @@ private struct MenuRowLabel: View {
             Spacer(minLength: 12)
             if showsChevron {
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isOpen ? 90 : 0))
             }
         }
     }

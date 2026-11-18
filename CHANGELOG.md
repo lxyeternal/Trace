@@ -3,6 +3,9 @@
 ## Unreleased
 
 - **Sessions notice when you leave**: forgetting to stop a session no longer spoils it. Away for under 15 minutes changes nothing; 15 minutes to 2 hours is left out and the session goes on; longer, or a Mac asleep for 30 minutes, ends the session at the moment you left. Trace says what it did and one click takes it back. Switch it off under Settings to let sessions run until you stop them.
+- **Tag time afterwards**: forgot to start a session? Pick a period in the timeline and choose Count as…, or add a past session on the Focus page. Everything in that time counts as the tag.
+- **Tags by app and site**: a new tag is set up by ticking apps installed on this Mac and typing sites, with a one-click pick for meeting apps and sites. Any tag, built-in or your own, can be renamed and given more apps and sites from its menu.
+- **Menu bar**: starting a session unfolds inside the panel. The menu it used before closed by itself before a tag could be clicked.
 - **Telegram**: time is shown per chat in Telegram for Mac. Switch it off under Settings › What is recorded. Thanks to David Ange.
 - **Russian**: the whole app is available in Russian. Thanks to David Ange.
 

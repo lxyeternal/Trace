@@ -144,13 +144,26 @@ private struct SessionCard: View {
 private struct SessionListCard: View {
     @EnvironmentObject private var model: AppModel
     @State private var deleting: FocusSession?
+    @State private var adds = false
 
     var body: some View {
         let sessions = model.daySessions
         Card {
             VStack(alignment: .leading, spacing: 0) {
-                SectionTitle(title: model.isToday ? L("Today's sessions") : L("Sessions that day"))
-                    .padding(.bottom, 8)
+                HStack {
+                    SectionTitle(title: model.isToday ? L("Today's sessions") : L("Sessions that day"))
+                    Spacer()
+                    Button { adds = true } label: {
+                        Label(L("Add a past one"), systemImage: "plus").font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(.trLink)
+                    .disabled(model.isDemo)
+                    .help(L("Forgot to start a session? Mark the time afterwards."))
+                    .popover(isPresented: $adds, arrowEdge: .bottom) {
+                        PastSessionForm { adds = false }.environmentObject(model)
+                    }
+                }
+                .padding(.bottom, 8)
                 if sessions.isEmpty {
                     Hairline()
                     Text(L("No sessions. Records are tagged by the rules alone."))
@@ -202,5 +215,67 @@ private struct SessionListCard: View {
             }
         }
         .padding(.vertical, 9)
+    }
+}
+
+/// Marks a stretch of the day as a session after the fact.
+private struct PastSessionForm: View {
+    @EnvironmentObject private var model: AppModel
+    var done: () -> Void
+    @State private var tagID: Int64?
+    @State private var from = Date()
+    @State private var to = Date()
+
+    var body: some View {
+        let tags = model.tags.filter(\.enabled)
+        let chosen = tags.first { $0.id == tagID } ?? tags.first
+        let limit = min(model.dayInterval.end, Date())
+        VStack(alignment: .leading, spacing: 14) {
+            Text(L("Add a past session")).font(.system(size: 14, weight: .semibold))
+            Text(L("Everything recorded on this Mac between the two times counts as the tag you pick."))
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                DatePicker(L("From"), selection: $from, in: model.dayInterval.start...limit, displayedComponents: .hourAndMinute)
+                DatePicker(L("to"), selection: $to, in: model.dayInterval.start...limit, displayedComponents: .hourAndMinute)
+            }
+            .fixedSize()
+            FlowLayout(spacing: 6) {
+                ForEach(tags) { tag in
+                    let isOn = tag.id == chosen?.id
+                    Button { tagID = tag.id } label: {
+                        HStack(spacing: 6) {
+                            Swatch(tag, size: 8, round: true)
+                            Text(tag.displayName).fontWeight(isOn ? .semibold : .medium)
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(height: 26)
+                        .background(isOn ? Palette.color(tag).opacity(0.16) : .clear, in: Capsule())
+                        .overlay(Capsule().strokeBorder(isOn ? Palette.color(tag) : Theme.line))
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(isOn ? .isSelected : [])
+                }
+            }
+            HStack {
+                Spacer()
+                Button(L("Cancel"), action: done).buttonStyle(.trBordered)
+                Button(L("Add")) {
+                    if let chosen { model.tagPeriod(DateInterval(start: from, end: to), as: chosen) }
+                    done()
+                }
+                .buttonStyle(.trProminent)
+                .disabled(chosen == nil || from >= to)
+            }
+        }
+        .padding(18)
+        .frame(width: 380)
+        .font(.system(size: 13))
+        .onAppear {
+            to = limit
+            from = max(model.dayInterval.start, limit.addingTimeInterval(-3600))
+        }
     }
 }

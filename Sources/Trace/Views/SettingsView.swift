@@ -329,7 +329,7 @@ private struct SyncStatusRow: View {
 }
 
 /// An app installed on this Mac.
-private struct InstalledApp: Identifiable, Hashable {
+struct InstalledApp: Identifiable, Hashable {
     let bundleID: String
     let name: String
     /// Comes with macOS, or lives in a Utilities folder.
