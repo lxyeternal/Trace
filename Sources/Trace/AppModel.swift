@@ -59,6 +59,8 @@ final class AppModel: ObservableObject {
     /// The short guide to the app, shown once after setup and from the Help menu.
     @Published var showsTour = false
 
+    /// The calendar day the clock was last seen in.
+    private var today = Calendar.current.startOfDay(for: Date())
     @Published var day = Calendar.current.startOfDay(for: Date()) {
         didSet { selection = nil; selectedBlock = nil; selectedEventID = nil; reload() }
     }
@@ -274,7 +276,7 @@ final class AppModel: ObservableObject {
         }
 
         let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.reloadIfToday() }
+            Task { @MainActor in self?.followDay() }
         }
         RunLoop.main.add(timer, forMode: .common)
         refresh = timer
@@ -525,6 +527,21 @@ final class AppModel: ObservableObject {
 
     private func reloadIfToday() {
         if isToday { reload() }
+    }
+
+    /// Moves on to the new day at midnight if today was being shown, so
+    /// "today" never keeps yesterday's total.
+    private func followDay() {
+        let now = Calendar.current.startOfDay(for: Date())
+        if now != today {
+            let followed = day == today
+            today = now
+            if followed {
+                day = now
+                return
+            }
+        }
+        reloadIfToday()
     }
 
     private func changed() {

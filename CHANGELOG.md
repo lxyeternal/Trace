@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- **Fixed**: after midnight, the menu bar and the main window went on showing the day before as today, with a total that no longer moved, until Trace was restarted. Trace now moves on to the new day by itself. Nothing was lost: the time was always recorded under the right day.
+
 ## 0.4.1
 
 - **Fixed**: after starting a session from the menu bar, the panel stayed as tall as the list of tags had been, with its contents adrift in a large translucent area away from the menu bar. The panel now shrinks back to fit.
